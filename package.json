@@ -1,0 +1,34 @@
+{
+  "name": "threejs2",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^5.0.8"
+  },
+  "dependencies": {
+    "@babylonjs/core": "^8.7.0",
+    "@babylonjs/gui": "^8.8.5",
+    "@babylonjs/havok": "^1.3.10",
+    "@babylonjs/loaders": "^8.10.0",
+    "@babylonjs/materials": "^8.7.0",
+    "@dimforge/rapier3d-compat": "^0.17.0",
+    "@tweenjs/tween.js": "^25.0.0",
+    "ammo.js": "^0.0.10",
+    "animejs": "^4.0.2",
+    "cesium": "^1.142.0",
+    "dat.gui": "^0.7.9",
+    "echarts": "^5.6.0",
+    "glsl-pipeline": "^4.1.0",
+    "gsap": "^3.13.0",
+    "lil-gui": "^0.21.0",
+    "stats.js": "^0.17.0",
+    "three": "^0.185.1",
+    "tweenjs": "^1.0.2"
+  }
+}
