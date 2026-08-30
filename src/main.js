@@ -1,120 +1,95 @@
-import * as THREE from "three"
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
-import { GUI } from "dat.gui"
-import Stats from 'three/addons/libs/stats.module.js'; // 性能监视工具
-import { gsap } from "gsap";
+// CESIUM_BASE_URL 通过 vite.config.js 的 define 配置，在编译阶段替换
+// 静态资源目录 (Workers, ThirdParty, Assets, Widgets) 已复制到 public/Cesium/
+
+import {
+  Cartesian3,
+  createOsmBuildingsAsync,
+  Ion,
+  Math as CesiumMath,
+  Terrain,
+  Viewer,
+  Camera,
+  Rectangle,
+  Ellipsoid,
+  EllipsoidTerrainProvider,
+} from "cesium";
+import * as Cesium from "cesium";
+import "cesium/Build/Cesium/Widgets/widgets.css";
+import GUI from "lil-gui";
+
+// Your access token can be found at: https://ion.cesium.com/tokens.
+// This is the default access token from your ion account
+
+Ion.defaultAccessToken = import.meta.env.VITE_CESIUM_TOKEN;
+
+// 必须在 new Viewer() 之前设置默认视图，否则不生效！
+// 定在中国北京
+Camera.DEFAULT_VIEW_RECTANGLE = Rectangle.fromDegrees(
+  115.25,
+  39.75,
+  116.25,
+  40.25,
+);
+// 缩放级别，数值越小缩放越近（0 = 刚好贴合矩形，1 = 更远）
+Camera.DEFAULT_VIEW_FACTOR = 0.1;
+
+// Initialize the Cesium Viewer in the HTML element with the `cesiumContainer` ID.
+const viewer = new Viewer("app", {
+  // 空间开关
+  infoBox: false, // 信息框
+  geocoder: false, // 右上角搜索框
+  baseLayerPicker: false, // 右上角图层选择控件
+  animation: false, // 左下角动画控件
+  fullscreenButton: false, // 右下角全屏控件
+  vrButton: false, // 右下角 VR 控件
+  homeButton: false, // 右下角 Home 控件
+  sceneModePicker: false, // 右下角 2D/3D 控件
+  selectionIndicator: false, // 选中高亮
+  timeline: false, // 底部时间轴
+  navigationHelpButton: false, // 右上角帮助控件
+  projectionPicker: false, // 右上角投影方式控件
+  // 场景与地形
+  terrainProvider: new EllipsoidTerrainProvider(), // 不使用地形 — 平滑椭球体地球
+  baseLayer: undefined, // false 不使用底图, undefined 使用默认底图, 其他值使用 Cesium.ImageryProvider 作为底图
+  // skyBox: true, // 天空盒
+  skyAtmosphere: false, // 大气层
+  // globe: false, // 地球仪
+  // sceneMode: 0, // 场景模式 0：3D，1：2D，2：Columbus View
+  mapProjection: undefined, // 地图投影方式，默认使用 WebMercatorProjection
+  mapMode2D: 1, // 2D 模式下地图的旋转方式，0：允许任意旋转，1：限制为北朝上
+  orderIndependentTranslucency: true, // 是否启用独立排序的半透明
+  shadows: false, // 是否启用阴影
+  // terrainShadows: 0, // 地形阴影模式 0：无，1：仅太阳光，2：仅灯光，3：太阳光和灯光
+  // 渲染和性能
+  useDefaultRenderLoop: true, // 是否使用 Cesium 的默认渲染循环，设置为 false 后需要自己调用 viewer.render() 来渲染
+  targetFrameRate: 60, // 目标帧率，只有在 useDefaultRenderLoop 为 true 时生效
+  requestRenderMode: false, // 是否启用请求渲染模式，设置为 true 后只有在场景发生变化时才渲染，配合 useDefaultRenderLoop 使用
+  maximumRenderTimeChange: 0.0, // 场景发生变化后强制渲染的最大时间间隔，单位秒，只有在 requestRenderMode 为 true 时生效
+  msaaSamples: 4, // 多重采样抗锯齿级别，0 表示不使用 MSAA，2、4、8 分别表示 2x、4x、8x MSAA
+  useBrowserRecommendedResolution: true, // 是否使用浏览器推荐的分辨率，设置为 false 后可以通过 resolutionScale 来调整分辨率
+  showRenderLoopErrors: true, // 是否在控制台显示渲染循环错误
+  blurActiveElementOnCanvasFocus: true, // 是否在画布获得焦点时模糊当前活动元素，默认为 true，可以防止在输入框等元素上使用鼠标滚轮时页面滚动
+  // 时钟与数据
+  shouldAnimate: false, // 是否默认自动播放时钟动画
+  clockViewModel: undefined, // 时钟视图模型，控制时钟的显示和交互
+  automaticallyTrackDataSourceClocks: true, // 是否自动跟踪数据源时钟，设置为 false 后需要自己管理数据源时钟
+  // dataSources: undefined, // 数据源集合，可以添加 CzmlDataSource、GeoJsonDataSource、KmlDataSource 等数据源
+  // 其他
+  ellipsoid: Ellipsoid.default, // 地球椭球体，默认使用 WGS84
+  fullscreenElement: document.body, // 全屏模式下的元素，默认为 document.body
+  creditContainer: undefined, // 版权信息容器，默认为 viewer.container
+  creditViewport: undefined, // 版权信息视口，默认为 viewer.scene.canvas
+  contextOptions: undefined, // WebGL 上下文选项，默认为 { webgl: { alpha: true, depth: true, stencil: true, antialias: false, preserveDrawingBuffer: false } }
+  depthPlaneEllipsoidOffset: 0.0, // 深度平面与椭球体之间的偏移距离，单位米，默认为 0.0，可以设置为一个小的正值来避免深度冲突
+});
+
+viewer.cesiumWidget.creditContainer.style.display = "none";
 
 
-
-// 创建gui
-const gui = new GUI()
-const stats = new Stats()
-document.body.appendChild(stats.domElement);
-
-// 渲染器初始化
-const renderer = new THREE.WebGLRenderer()
-renderer.setPixelRatio(window.devicePixelRatio) // 处理高分屏
-renderer.setClearColor(0x000000, 1) // 设置背景色
-renderer.setSize(window.innerWidth, window.innerHeight)
-renderer.setAnimationLoop( animations );
-document.querySelector("#app").appendChild(renderer.domElement)
-
-// 摄像机初始化
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000)
-camera.aspect = window.innerWidth / window.innerHeight
-camera.updateProjectionMatrix()
-camera.position.set(0, 5, 5)
-// 创建轨道控制器
-const controls = new OrbitControls(camera, renderer.domElement)
-controls.enableDamping = true // 开启阻尼
-controls.dampingFactor = 0.25 // 阻尼系数
-controls.enableZoom = true // 开启缩放
-controls.enablePan = true // 开启平移
-controls.enableRotate = true // 开启旋转
-controls.autoRotate = false // 自动旋转
-controls.autoRotateSpeed = 1.0 // 自动旋转速度
-controls.target.set(0, 0, 0) // 设置控制器的目标点
-controls.update() // 更新控制器
-
-// 创建基础环境
-const scene = new THREE.Scene()
-
-// 添加世界光源
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.5)
-scene.add(ambientLight)
-
-const directionalLight = new THREE.DirectionalLight(0xffffff, 1)
-directionalLight.position.set(0, 10, 10)
-scene.add(directionalLight)
-
-// 添加平行光辅助器
-const directionalLightHelper = new THREE.DirectionalLightHelper(directionalLight, 1)
-scene.add(directionalLightHelper)
-
-// 世界坐标辅助器
-const axesHelper = new THREE.AxesHelper(5)
-scene.add(axesHelper)
-
-// grid辅助器
-const gridHelper = new THREE.GridHelper(20, 20)
-scene.add(gridHelper)
-
-let helpParams =  {
-  gridHelper: true,
-  directionalLightHelper: true,
-  axesHelper: true,
-}
-const helpControls = gui.addFolder('辅助器控制')
-
-function saveControlHelps(){
-  console.log(helpParams)
-  localStorage.setItem('helpControls', JSON.stringify(helpParams));
-}
-
-function loadControlHelps(){
-  helpParams = JSON.parse(localStorage.getItem('helpControls'));
-  gridHelper.visible = helpParams.gridHelper;
-  directionalLightHelper.visible = helpParams.directionalLightHelper;
-  axesHelper.visible = helpParams.axesHelper;
-  helpControls.add( helpParams, 'gridHelper' ).name('grid辅助器').onChange(value => {gridHelper.visible = value; saveControlHelps()} );
-  helpControls.add( helpParams, 'directionalLightHelper' ).name('平行光辅助器').onChange(value => {directionalLightHelper.visible = value; saveControlHelps()} );
-  helpControls.add( helpParams, 'axesHelper' ).name('坐标辅助器').onChange(value => {axesHelper.visible = value; saveControlHelps()} );
-}
-
-loadControlHelps()
-
-///--------------------------------------------------------------------
-
-  
-
-// 主要代码写在这里
-// const bufferGeometry = new THREE.BufferGeometry()
-const plane = new THREE.Mesh(
-  new THREE.PlaneGeometry(10, 10),
-  new THREE.MeshBasicMaterial({color: 0xffffff, side: THREE.DoubleSide})
-)
-scene.add(plane)
+const gui = new GUI();
 
 
-
-
-///--------------------------------------------------------------------
-
-
-// 渲染场景
-function animations() {
-  renderer.render(scene, camera)
-  controls.update() // 更新控制器
-  stats.update();
-}
-
-// 其他功能
-window.onresize = () => {
-  // 重新获取宽高并且渲染
-  const width = Math.ceil(window.innerWidth)
-  const height = Math.ceil(window.innerHeight)
-  renderer.setSize(width, height)
-  camera.aspect = width / height
-  camera.updateProjectionMatrix()
-  renderer.render(scene, camera)
-}
+const spherical = new Cesium.Spherical(1, Cesium.Math.toRadians(45), Cesium.Math.toRadians(45)); // 球面坐标系
+const a = Cesium.Cartesian3.fromSpherical(spherical, new Cesium.Cartesian3());
+console.log("spherical", spherical); // Spherical {clock: 1, cone: 0.7853981633974483, magnitude: 0.7853981633974483}
+console.log("a", a); // Cartesian3 {x: 0.30006248702364763, y: 0.46731963516979014, z: 0.5553603672697958}
