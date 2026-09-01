@@ -120,95 +120,50 @@ scene.add(cylinder);
 const shader = new THREE.ShaderMaterial({
   uniforms: {
     uTime: { value: 0.0 },
-    frequencyNum: { value: 6.0 }, // 波浪频率
-    speed: { value: 1.0 }, // 流动速度
-    opacity: { value: 1.0 }, // 整体不透明度
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
+    varying vec2 vPosXZ; // 把位置传给片元, 在片元里逐像素算角度
     void main() {
       vUv = uv;
+      vPosXZ = position.xz; // 位置插值是连续的, 没有 atan 分支跳变问题
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `,
   fragmentShader: /* glsl */ `
-    uniform float uTime;
-    uniform float frequencyNum;
-    uniform float speed;
-    uniform float opacity;
     varying vec2 vUv;
+    varying vec2 vPosXZ;
+    const float PI = 3.1415926;
+
+    // 多项式高度场: 输入 t ∈ [-1, 1]
+    float poly(float t) {
+      float t2 = t * t;
+      float t4 = t2 * t2;
+      // 四次多项式 6t⁴ - 6t²: W 形双谷, 起伏更剧烈 (poly(±1) = 0 无缝)
+      return 6.0 * t4 - 6.0 * t2;
+    }
 
     void main() {
-      float x = vUv.x;
+      vec2 uv = vUv;
+      // 逐像素用真实位置算角度: 位置连续 → 角度不会像顶点插值那样跳变
+      float theta = atan(vPosXZ.x, vPosXZ.y); // -PI ~ PI
+      float t = theta / PI;                   // [-1, 1]
+      uv.y += poly(t) * 0.45;                 // ← 用多项式扭曲 uv.y, 0.45 让起伏更剧烈
 
-      // 多层正弦叠加的波浪高度场
-      float wave = sin(x * frequencyNum);
-      float t = 0.01 * (-uTime * 130.0 * speed);
-      wave += sin(x * frequencyNum * 2.1 + t) * 4.5;
-      wave += sin(x * frequencyNum * 1.72 + t * 1.121) * 4.0;
-      wave += sin(x * frequencyNum * 2.221 + t * 0.437) * 5.0;
-      wave += sin(x * frequencyNum * 3.1122 + t * 4.269) * 2.5;
-      wave *= 0.06;
-      wave /= 3.0;
-      wave += 0.55;
-
-      // 波浪遮罩透明度: 波峰以下是实体, 以上渐隐
-      float waveAlpha = step(vUv.y, wave) * (wave - vUv.y) / wave;
-      float baseAlpha = (1.0 - vUv.y) * 0.12;
-      float alpha = max(waveAlpha, baseAlpha);
-
-      // 颜色 (橙→黄渐变)
-      vec3 color = mix(vec3(1.0, 0.25, 0.05), vec3(1.0, 0.85, 0.3), vUv.y);
-
-      gl_FragColor = vec4(color, alpha * opacity);
+      // 用扭曲后的 uv 生成渐变颜色
+      float f = clamp(uv.y, 0.0, 1.0);        // 混合系数: 0=橙 1=蓝
+      vec3 color = mix(vec3(1.0, 0.2, 0.1), vec3(0.2, 0.5, 1.0), f);
+      // 蓝色完全透明: f 超过阈值(偏蓝)就 alpha 直接为 0, 硬切
+      float alpha = 1.0 - step(0.5, f);
+      gl_FragColor = vec4(color, alpha);
     }
   `,
   side: THREE.DoubleSide,
   transparent: true,
   depthWrite: false,
-  depthTest: true,
+  depthTest: false,
 });
 cylinder.material = shader;
-
-
-// 空心盒子: 4 面墙, 没有顶盖和底盖
-const boxWidth = 1
-const boxDepth = 1
-const boxHeight = 1
-const hw = boxWidth / 2
-const hd = boxDepth / 2
-const hh = boxHeight / 2
-
-// 4 面墙, 每面 6 个顶点 (2 个三角形), 共 24 个顶点
-const positions = [
-  // 前墙 (z = +hd)
-  -hw, hh, hd, hw, hh, hd, hw, -hh, hd,
-  -hw, hh, hd, hw, -hh, hd, -hw, -hh, hd,
-  // 后墙 (z = -hd)
-  hw, hh, -hd, -hw, hh, -hd, -hw, -hh, -hd,
-  hw, hh, -hd, -hw, -hh, -hd, hw, -hh, -hd,
-  // 左墙 (x = -hw)
-  -hw, hh, -hd, -hw, hh, hd, -hw, -hh, hd,
-  -hw, hh, -hd, -hw, -hh, hd, -hw, -hh, -hd,
-  // 右墙 (x = +hw)
-  hw, hh, hd, hw, hh, -hd, hw, -hh, -hd,
-  hw, hh, hd, hw, -hh, -hd, hw, -hh, hd,
-]
-const bufferGeometry = new THREE.BufferGeometry()
-bufferGeometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3))
-
-// 每面墙的 UV 都是 0~1 (波浪 shader 需要)
-const uvs = [
-  0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0, // 前
-  0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0, // 后
-  0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0, // 左
-  0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0, // 右
-]
-bufferGeometry.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(uvs), 2))
-
-const box = new THREE.Mesh(bufferGeometry, shader) // 第一个参数是几何体, 第二个是材质
-// box.position.set(2, 0, 0)
-scene.add(box)
 
 // 地板
 const floor = new THREE.Mesh(

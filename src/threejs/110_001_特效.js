@@ -117,15 +117,14 @@ const cylinder = new THREE.Mesh(
   new THREE.MeshBasicMaterial({ color: 0x00ff00 }),
 );
 scene.add(cylinder);
+
 const shader = new THREE.ShaderMaterial({
   uniforms: {
     uTime: { value: 0.0 },
-    frequencyNum: { value: 6.0 }, // 波浪频率
-    speed: { value: 1.0 }, // 流动速度
-    opacity: { value: 1.0 }, // 整体不透明度
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
+
     void main() {
       vUv = uv;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
@@ -133,82 +132,35 @@ const shader = new THREE.ShaderMaterial({
   `,
   fragmentShader: /* glsl */ `
     uniform float uTime;
-    uniform float frequencyNum;
-    uniform float speed;
-    uniform float opacity;
+
     varying vec2 vUv;
 
+    float PI = 3.1415926535897932384626433832795;
+
     void main() {
-      float x = vUv.x;
+      float wave = sin(vUv.x * PI * 12.0) * sin(vUv.x * PI * 12.0); // 计算波动值
+      float flow = sin(vUv.x * PI * 10.0 + vUv.y * 2.0 - uTime * 3.0);
+      float flame = sin(vUv.x * PI * 2.0 + uTime * 2.0);
+      float heightMask = 0.65 + flame * 0.2;
+      heightMask = smoothstep(heightMask, heightMask - 0.15, vUv.y); // 这个是一个高度遮罩，控制火焰的高度
 
-      // 多层正弦叠加的波浪高度场
-      float wave = sin(x * frequencyNum);
-      float t = 0.01 * (-uTime * 130.0 * speed);
-      wave += sin(x * frequencyNum * 2.1 + t) * 4.5;
-      wave += sin(x * frequencyNum * 1.72 + t * 1.121) * 4.0;
-      wave += sin(x * frequencyNum * 2.221 + t * 0.437) * 5.0;
-      wave += sin(x * frequencyNum * 3.1122 + t * 4.269) * 2.5;
-      wave *= 0.06;
-      wave /= 3.0;
-      wave += 0.55;
+      wave *= heightMask; // 将波动值乘以高度遮罩
+      wave *= flow; // 将波动值乘以流动值
+      wave *= flame; // 将波动值乘以火焰值
 
-      // 波浪遮罩透明度: 波峰以下是实体, 以上渐隐
-      float waveAlpha = step(vUv.y, wave) * (wave - vUv.y) / wave;
-      float baseAlpha = (1.0 - vUv.y) * 0.12;
-      float alpha = max(waveAlpha, baseAlpha);
-
-      // 颜色 (橙→黄渐变)
-      vec3 color = mix(vec3(1.0, 0.25, 0.05), vec3(1.0, 0.85, 0.3), vUv.y);
-
-      gl_FragColor = vec4(color, alpha * opacity);
+      vec3 color = vec3(1.0, 1.0, 0.0) * wave;
+      color = mix(color, vec3(1.0, 0.0, 0.0), wave); // 将颜色从黄色过渡到红色
+      float alpha = 1.0;
+      gl_FragColor = vec4(color, wave);
     }
   `,
-  side: THREE.DoubleSide,
   transparent: true,
-  depthWrite: false,
-  depthTest: true,
+  // side: THREE.BackSide,
+  side: THREE.DoubleSide,
+  depthWrite: false, // 禁用深度写入, 不然会出现透明度问题
+  // blending: THREE.AdditiveBlending, // 使用加法混合模式
 });
 cylinder.material = shader;
-
-
-// 空心盒子: 4 面墙, 没有顶盖和底盖
-const boxWidth = 1
-const boxDepth = 1
-const boxHeight = 1
-const hw = boxWidth / 2
-const hd = boxDepth / 2
-const hh = boxHeight / 2
-
-// 4 面墙, 每面 6 个顶点 (2 个三角形), 共 24 个顶点
-const positions = [
-  // 前墙 (z = +hd)
-  -hw, hh, hd, hw, hh, hd, hw, -hh, hd,
-  -hw, hh, hd, hw, -hh, hd, -hw, -hh, hd,
-  // 后墙 (z = -hd)
-  hw, hh, -hd, -hw, hh, -hd, -hw, -hh, -hd,
-  hw, hh, -hd, -hw, -hh, -hd, hw, -hh, -hd,
-  // 左墙 (x = -hw)
-  -hw, hh, -hd, -hw, hh, hd, -hw, -hh, hd,
-  -hw, hh, -hd, -hw, -hh, hd, -hw, -hh, -hd,
-  // 右墙 (x = +hw)
-  hw, hh, hd, hw, hh, -hd, hw, -hh, -hd,
-  hw, hh, hd, hw, -hh, -hd, hw, -hh, hd,
-]
-const bufferGeometry = new THREE.BufferGeometry()
-bufferGeometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3))
-
-// 每面墙的 UV 都是 0~1 (波浪 shader 需要)
-const uvs = [
-  0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0, // 前
-  0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0, // 后
-  0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0, // 左
-  0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0, // 右
-]
-bufferGeometry.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(uvs), 2))
-
-const box = new THREE.Mesh(bufferGeometry, shader) // 第一个参数是几何体, 第二个是材质
-// box.position.set(2, 0, 0)
-scene.add(box)
 
 // 地板
 const floor = new THREE.Mesh(
@@ -228,6 +180,7 @@ function animations() {
   stats.update();
   // 更新uniforms
   shader.uniforms.uTime.value += 0.01; // 更新时间
+  shader.needsUpdate = true;
 }
 
 // 其他功能
