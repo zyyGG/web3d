@@ -570,7 +570,7 @@ function updateSteps() {
 const cloudGui = gui.addFolder('云层形状')
 cloudGui.add(params, 'cloudBase', 0, 2000, 10).name('云底高度').onChange(v => { cloudUniforms.uBaseY.value = v; updateBox() })
 cloudGui.add(params, 'cloudTop', 100, 4000, 10).name('云顶高度').onChange(v => { cloudUniforms.uTopY.value = v; updateBox() })
-cloudGui.add(params, 'extent', 600, 40000, 50).name('水平范围').onChange(updateBox)
+cloudGui.add(params, 'extent', 600, 4000, 50).name('水平范围').onChange(updateBox)
 cloudGui.add(params, 'coverage', 0, 1, 0.01).name('覆盖率').onChange(v => cloudUniforms.uCoverage.value = v)
 cloudGui.add(params, 'featureSize', 60, 1200, 10).name('云块尺寸').onChange(v => cloudUniforms.uFeatureSize.value = v)
 cloudGui.add(params, 'detail', 0, 1, 0.01).name('边缘细节').onChange(v => cloudUniforms.uDetail.value = v)

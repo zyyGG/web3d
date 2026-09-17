@@ -1,8 +1,11 @@
-import { GUI } from "dat.gui"
+import { GUI } from "lil-gui"
 import { gsap } from "gsap";
 import Stats from 'three/addons/libs/stats.module.js'; // 性能监视工具
 import BoxGeometry from "/src/webgl/utils/Geometry/BoxGeometry.js";
 import Matrix4 from "/src/webgl/utils/Math/Matrix4.js";
+import vertexShader from "./webgl/shader/vertex.vert?raw"
+import fragmentShader from "./webgl/shader/frament.frag?raw"
+
 
 // 创建gui
 const gui = new GUI()
@@ -13,26 +16,10 @@ const { canvas, gl } = initGl()
 console.log(canvas.width, canvas.height);
 const program = createProgramer(
   gl,
-  `
-    attribute vec3 position;
-
-    uniform mat4 projectionMatrix;
-    uniform mat4 modelMatrix;
-
-    void main() {
-      gl_Position = projectionMatrix * modelMatrix * vec4(position, 1.0);
-    }
-  `,
-  `
-    precision mediump float;
-
-    void main() {
-      vec3 color = vec3(1.0, 1.0, 1.0);
-      gl_FragColor = vec4(color, 1.0);
-    }
-  `
+  vertexShader,
+  fragmentShader
 )
-const shape = new BoxGeometry(100, 100, 100)
+const shape = new BoxGeometry(1, 1, 1)
 
 const positionBuffer = gl.createBuffer()
 gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer)
@@ -53,26 +40,52 @@ const projectionMatrixLocation = gl.getUniformLocation(program, "projectionMatri
 gl.uniformMatrix4fv(projectionMatrixLocation, false, projectionMatrix)
 
 const params = {
-  x: 100,
-  y: 100,
-  z: 0,
+  x: 0,
+  y: 0,
+  z: -5,
 }
 // 模型矩阵
 const modelMatrix = Matrix4.getTranslationMatrix(params.x, params.y, params.z)
 const modelMatrixLocation = gl.getUniformLocation(program, "modelMatrix")
 gl.uniformMatrix4fv(modelMatrixLocation, false, modelMatrix.elements)
-
-gui.add(params, "x", -canvas.width, canvas.width).onChange(updateModelMatrix)
-gui.add(params, "y", -canvas.height, canvas.height).onChange(updateModelMatrix)
-gui.add(params, "z", -500, 500).onChange(updateModelMatrix)
-
-render()
+const cube01Folder = gui.addFolder("Cube01")
+cube01Folder.add(params, "x", -500, 500, 0.1).onChange(updateModelMatrix)
+cube01Folder.add(params, "y", -500, 500, 0.1).onChange(updateModelMatrix)
+cube01Folder.add(params, "z", -500, 500, 0.1).onChange(updateModelMatrix)
 
 function updateModelMatrix(){
   const martix = Matrix4.getTranslationMatrix(params.x, params.y, params.z)
   gl.uniformMatrix4fv(modelMatrixLocation, false, martix.elements)
   render()
 }
+
+
+
+
+
+// 视图矩阵
+const  viewParams = {
+  x: 0,
+  y: 0,
+  z: 0,
+}
+const viewMatrix = Matrix4.getTranslationMatrix(viewParams.x, viewParams.y, viewParams.z)
+const viewMatrixLocation = gl.getUniformLocation(program, "viewMatrix")
+gl.uniformMatrix4fv(viewMatrixLocation, false, viewMatrix.elements)
+const cameraFolder = gui.addFolder("Camera")
+cameraFolder.add(viewParams, "x", -canvas.width, canvas.width).onChange(updateViewMatrix)
+cameraFolder.add(viewParams, "y", -canvas.height, canvas.height).onChange(updateViewMatrix)
+cameraFolder.add(viewParams, "z", -500, 500).onChange(updateViewMatrix)
+
+function updateViewMatrix(){
+  const matrix = Matrix4.getTranslationMatrix(viewParams.x, viewParams.y, viewParams.z)
+  gl.uniformMatrix4fv(viewMatrixLocation, false, matrix.elements)
+  render()
+}
+
+render()
+
+
 
 function render(){
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
