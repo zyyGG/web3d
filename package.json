@@ -29,6 +29,7 @@
     "lil-gui": "^0.21.0",
     "stats.js": "^0.17.0",
     "three": "^0.185.1",
+    "three-mesh-bvh": "^0.9.15",
     "tweenjs": "^1.0.2"
   }
 }
