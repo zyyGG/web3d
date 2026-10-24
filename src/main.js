@@ -1,184 +1,176 @@
-/*
-  目标是要绘制100个三角形, 
-  最基础的方案, 绘制完一个三角形后, 缓存,然后绘制下一个.
-  这样draw命令多次调用, 也就会多次重复读取buffer. 
-  所以利用存储缓冲区, 我把100个随机顶点都扔进缓冲区,
-  这样就只需要绘制一次就好了.
-*/
+import * as THREE from "three"
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
+import { GUI } from "dat.gui"
+import Stats from 'three/addons/libs/stats.module.js'; // 性能监视工具
+import { gsap } from "gsap";
+import { TilesRenderer } from "3d-tiles-renderer";
+import { CesiumIonAuthPlugin, GLTFExtensionsPlugin } from "3d-tiles-renderer/plugins";
+import { DRACOLoader } from "three/examples/jsm/Addons.js";
 
-(async () => {
-  // dom
-  const app = document.querySelector("#app");
-  const canvas = document.createElement("canvas");
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-  app.appendChild(canvas);
-  // 初始化
-  const adaper = await navigator.gpu.requestAdapter()
-  const device = await adaper.requestDevice()
-  const context = canvas.getContext("webgpu")
-  const presentationFormat = navigator.gpu.getPreferredCanvasFormat()
-  context.configure({
-    device: device,
-    format: presentationFormat
-  })
+// 创建gui
+const gui = new GUI()
+const stats = new Stats()
+document.body.appendChild(stats.domElement);
 
-  // module
-  const module = device.createShaderModule({
-    code: /* wgsl */`
-      struct VSOut {
-        @builtin(position) position: vec4f,
-        @location(0) color: vec3f,
-        @location(1) alpha: f32,
-      }
+// 渲染器初始化
+const renderer = new THREE.WebGLRenderer()
+renderer.setPixelRatio(window.devicePixelRatio) // 处理高分屏
+renderer.setClearColor(0x000000, 1) // 设置背景色
+renderer.setSize(window.innerWidth, window.innerHeight)
+renderer.setAnimationLoop( animations );
+document.querySelector("#app").appendChild(renderer.domElement)
 
-      struct DefaultStruct {
-        color: vec3f, // 颜色
-        scale: vec2f, // 大小
-        offset: vec2f, // 偏移
-        alpha: f32, // 透明度
-        rotate: f32, // 旋转
-      };
+// 摄像机初始化
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 10000)
+camera.aspect = window.innerWidth / window.innerHeight
+camera.updateProjectionMatrix()
+camera.position.set(0, 5, 5)
+// 创建轨道控制器
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true // 开启阻尼
+controls.dampingFactor = 0.25 // 阻尼系数
+controls.enableZoom = true // 开启缩放
+controls.enablePan = true // 开启平移
+controls.enableRotate = true // 开启旋转
+controls.autoRotate = false // 自动旋转
+controls.autoRotateSpeed = 1.0 // 自动旋转速度
+controls.target.set(0, 0, 0) // 设置控制器的目标点
+controls.update() // 更新控制器
 
-      @group(0) @binding(0)
-      var<storage, read> ds: array<DefaultStruct>;
+// 创建基础环境
+const scene = new THREE.Scene()
 
-      @vertex
-      fn vs(
-        @builtin(vertex_index) vertexIndex: u32,
-        @builtin(instance_index) instanceIndex: u32,
-      ) -> VSOut {
+// 添加世界光源
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.5)
+scene.add(ambientLight)
 
-        // 顶点写死了
-        let pos = array(
-          vec2f( 0.5,  0.5),  
-          vec2f( 0.5, -0.5),  
-          vec2f(-0.5, -0.5),  
-          vec2f( 0.5,  0.5), 
-          vec2f(-0.5,  0.5), 
-          vec2f(-0.5, -0.5), 
-        );
+const directionalLight = new THREE.DirectionalLight(0xffffff, 1)
+directionalLight.position.set(0, 10, 10)
+scene.add(directionalLight)
 
-        let instance = ds[instanceIndex];
-        let position = pos[vertexIndex];
+// 添加平行光辅助器
+const directionalLightHelper = new THREE.DirectionalLightHelper(directionalLight, 1)
+scene.add(directionalLightHelper)
 
-        let c = cos(instance.rotate);
-        let s = sin(instance.rotate);
+// 世界坐标辅助器
+const axesHelper = new THREE.AxesHelper(5)
+scene.add(axesHelper)
 
-        // 1. 计算缩放
-        let scaled = position * instance.scale;
-        // 2. 计算旋转
-        // x2 = x1 * cos(r) - y1 * sin(r)
-        // y2 = x1 * sin(r) + y1 * cos(r)
-        // let rotated = vec2f(
-        //   scaled.x * c - scaled.y * s,
-        //   scaled.x * s + scaled.y * c
-        // );
-        // 3. 平移偏移
-        let finalPos = scaled + instance.offset;
+// grid辅助器
+const gridHelper = new THREE.GridHelper(20, 20)
+scene.add(gridHelper)
 
-        var vsOut: VSOut;
-        vsOut.position = vec4f(finalPos, 0.0, 1.0);
-        vsOut.color = instance.color;
-        vsOut.alpha = instance.alpha;
+let helpParams =  {
+  gridHelper: true,
+  directionalLightHelper: true,
+  axesHelper: true,
+}
+const helpControls = gui.addFolder('辅助器控制')
 
-        return vsOut;
-      }
+function saveControlHelps(){
+  console.log(helpParams)
+  localStorage.setItem('helpControls', JSON.stringify(helpParams));
+}
 
-      @fragment
-      fn fs(vsOut: VSOut) -> @location(0) vec4f {
-        return vec4f(vsOut.color, vsOut.alpha);
-      }
-    `,
-  })
-
-  // 创建渲染管线
-  const pipeline = device.createRenderPipeline({
-    layout: "auto",
-    vertex: {
-      module: module,
-    },
-    fragment: {
-      module: module,
-      targets: [{
-        format: presentationFormat,
-        blend: {
-          color: {
-            srcFactor: 'src-alpha',
-            dstFactor: 'one-minus-src-alpha'
-          },
-          alpha: {
-            srcFactor: 'src-alpha',
-            dstFactor: 'one-minus-src-alpha'
-          }
-        }
-      }]
-    },
-    
-  })
-
-  // 实例数量
-  const instanceCout = 1000000;
-  // 配置buffer
-  const singelBufferSize = 
-  4 * 4 + // color 需要补充padding(4byted)
-  2 * 4 + // scale
-  2 * 4 + // offset
-  1 * 4 + // alpha
-  1 * 4 ; // rotate
-  const bufferSize = singelBufferSize * instanceCout;
-  const buffer = device.createBuffer({
-    size: bufferSize,
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-  })
-  const bufferValue = new Float32Array(bufferSize / 4)
-  const aspect = window.innerWidth / window.innerHeight
-
-  let offset = 0;
-  for(let i = 0; i < instanceCout; i++) {
-    // 颜色
-    bufferValue.set([Math.random(), Math.random(), Math.random()], offset); offset += 4;
-    // scale
-    bufferValue.set([Math.random() * 0.5 * aspect, Math.random() * 0.5], offset); offset += 2;
-    // offset
-    bufferValue.set([(Math.random() * 2 - 1) * aspect , Math.random() * 2 - 1], offset); offset += 2;
-    // alpha
-    // bufferValue.set([Math.random() * 0.5 + 0.5], offset); offset += 1;
-    bufferValue.set([0.1], offset); offset += 1;
-    // rotate
-    bufferValue.set([Math.random() * Math.PI], offset);
+function loadControlHelps(){
+  const storeParams = JSON.parse(localStorage.getItem('helpControls'));
+  if(storeParams) {
+    helpParams = storeParams
+  } else {
+    helpParams = helpParams
   }
+  gridHelper.visible = helpParams.gridHelper;
+  directionalLightHelper.visible = helpParams.directionalLightHelper;
+  axesHelper.visible = helpParams.axesHelper;
+  helpControls.add( helpParams, 'gridHelper' ).name('grid辅助器').onChange(value => {gridHelper.visible = value; saveControlHelps()} );
+  helpControls.add( helpParams, 'directionalLightHelper' ).name('平行光辅助器').onChange(value => {directionalLightHelper.visible = value; saveControlHelps()} );
+  helpControls.add( helpParams, 'axesHelper' ).name('坐标辅助器').onChange(value => {axesHelper.visible = value; saveControlHelps()} );
+}
 
-  device.queue.writeBuffer(buffer, 0, bufferValue);
+loadControlHelps()
 
-  // 创建bindGroup
-  const bindGroup = device.createBindGroup({
-    layout: pipeline.getBindGroupLayout(0),
-    entries: [
-      {binding: 0, resource: buffer}
-    ]
+///--------------------------------------------------------------------
+
+// 经纬度 -> ECEF (WGS84, 不需要引入Cesium)
+function lonLatToECEF(lonDeg, latDeg, height = 0) {
+  const a = 6378137.0;
+  const e2 = 0.0066943799901413165;
+  const lon = (lonDeg * Math.PI) / 180;
+  const lat = (latDeg * Math.PI) / 180;
+  const N = a / Math.sqrt(1 - e2 * Math.sin(lat) ** 2);
+  return new THREE.Vector3(
+    (N + height) * Math.cos(lat) * Math.cos(lon),
+    (N + height) * Math.cos(lat) * Math.sin(lon),
+    (N * (1 - e2) + height) * Math.sin(lat),
+  );
+}
+
+const LON = 114.168754;
+const LAT = 30.504312;
+const eye = lonLatToECEF(LON, LAT, 0);
+camera.up.copy(eye).normalize()
+camera.near = 1
+camera.far = 50000;
+camera.updateProjectionMatrix()
+camera.position.copy(lonLatToECEF(LON, LAT, 600));
+controls.target.copy(eye);
+controls.update()
+
+// 3D tiles
+const tiles = new TilesRenderer();
+tiles.registerPlugin(
+  new CesiumIonAuthPlugin({
+    apiToken: import.meta.env.VITE_CESIUM_TOKEN,
+    assetId: 96188,
+  })
+)
+tiles.registerPlugin(
+  new GLTFExtensionsPlugin({
+    dracoLoader: new DRACOLoader().setDecoderPath("/draco")
+  })
+)
+tiles.setCamera(camera)
+tiles.setResolutionFromRenderer(camera, renderer)
+tiles.errorTarget = 12; // 越小越精细、越卡
+scene.add(tiles.group);
+
+// 绘制材质颜色
+function paintTiles() {
+  tiles.group.traverse((obj) => {
+    if (!obj.isMesh || obj.userData.__painted) return;
+    obj.userData.__painted = true;
+    obj.material = new THREE.MeshStandardMaterial({
+      color: 0xdfe9f2,
+      roughness: 0.9,
+      metalness: 0.05,
+    })
   })
 
-  // 创建renderpass
-  const renderPassDescirptor = {
-    colorAttachments: [
-      {
-        view: context.getCurrentTexture().createView(),
-        clearValue: [0.3, 0.3, 0.3, 1],
-        loadOp: 'clear',
-        storeOp: 'store',
-      }
-    ]
-  }
+}
 
-  // 创建编码器
-  const encoder = device.createCommandEncoder()
-  const pass = encoder.beginRenderPass(renderPassDescirptor)
-  pass.setPipeline(pipeline)
-  pass.setBindGroup(0, bindGroup)
-  pass.draw(6, instanceCout)
-  pass.end()
 
-  const commanderBuffer = encoder.finish()
-  device.queue.submit([commanderBuffer])
-})()
+
+///--------------------------------------------------------------------
+
+
+// 渲染场景
+function animations() {
+
+  camera.updateMatrixWorld(); // 更新世界矩阵
+  if(tiles) tiles.update()
+  controls.update() // 更新控制器
+  stats.update();
+  paintTiles();
+  renderer.render(scene, camera)
+}
+
+// 其他功能
+window.onresize = () => {
+  // 重新获取宽高并且渲染
+  const width = Math.ceil(window.innerWidth)
+  const height = Math.ceil(window.innerHeight)
+  renderer.setSize(width, height)
+  camera.aspect = width / height
+  camera.updateProjectionMatrix()
+  renderer.render(scene, camera)
+}

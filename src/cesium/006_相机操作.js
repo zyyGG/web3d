@@ -1,39 +1,26 @@
-// CESIUM_BASE_URL 通过 vite.config.js 的 define 配置，在编译阶段替换
-// 静态资源目录 (Workers, ThirdParty, Assets, Widgets) 已复制到 public/Cesium/
-
-import {
-  Cartesian3,
-  createOsmBuildingsAsync,
-  Ion,
-  Math as CesiumMath,
-  Terrain,
-  Viewer,
-  Camera,
-  Rectangle,
-  Ellipsoid,
-  EllipsoidTerrainProvider,
-} from "cesium";
+import * as Cesium from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import GUI from "lil-gui";
 
 // Your access token can be found at: https://ion.cesium.com/tokens.
 // This is the default access token from your ion account
 
-Ion.defaultAccessToken = import.meta.env.VITE_CESIUM_TOKEN;
+Cesium.Ion.defaultAccessToken = import.meta.env.VITE_CESIUM_TOKEN;
 
 // 必须在 new Viewer() 之前设置默认视图，否则不生效！
 // 定在中国北京
-Camera.DEFAULT_VIEW_RECTANGLE = Rectangle.fromDegrees(
+const defaultRectangle = Cesium.Rectangle.fromDegrees(
   115.25,
   39.75,
   116.25,
   40.25,
 );
+Cesium.Camera.DEFAULT_VIEW_RECTANGLE = defaultRectangle
 // 缩放级别，数值越小缩放越近（0 = 刚好贴合矩形，1 = 更远）
-Camera.DEFAULT_VIEW_FACTOR = 0.1;
+Cesium.Camera.DEFAULT_VIEW_FACTOR = 0;
 
 // Initialize the Cesium Viewer in the HTML element with the `cesiumContainer` ID.
-const viewer = new Viewer("app", {
+const viewer = new Cesium.Viewer("app", {
   // 空间开关
   infoBox: false, // 信息框
   geocoder: false, // 右上角搜索框
@@ -48,7 +35,7 @@ const viewer = new Viewer("app", {
   navigationHelpButton: false, // 右上角帮助控件
   projectionPicker: false, // 右上角投影方式控件
   // 场景与地形
-  terrainProvider: new EllipsoidTerrainProvider(), // 不使用地形 — 平滑椭球体地球
+  terrainProvider: new Cesium.EllipsoidTerrainProvider(), // 不使用地形 — 平滑椭球体地球
   baseLayer: undefined, // false 不使用底图, undefined 使用默认底图, 其他值使用 Cesium.ImageryProvider 作为底图
   // skyBox: true, // 天空盒
   skyAtmosphere: false, // 大气层
@@ -74,7 +61,7 @@ const viewer = new Viewer("app", {
   automaticallyTrackDataSourceClocks: true, // 是否自动跟踪数据源时钟，设置为 false 后需要自己管理数据源时钟
   // dataSources: undefined, // 数据源集合，可以添加 CzmlDataSource、GeoJsonDataSource、KmlDataSource 等数据源
   // 其他
-  ellipsoid: Ellipsoid.default, // 地球椭球体，默认使用 WGS84
+  ellipsoid: Cesium.Ellipsoid.default, // 地球椭球体，默认使用 WGS84
   fullscreenElement: document.body, // 全屏模式下的元素，默认为 document.body
   creditContainer: undefined, // 版权信息容器，默认为 viewer.container
   creditViewport: undefined, // 版权信息视口，默认为 viewer.scene.canvas
@@ -84,56 +71,20 @@ const viewer = new Viewer("app", {
 
 viewer.cesiumWidget.creditContainer.style.display = "none";
 
-// Add Cesium OSM Buildings, a global 3D buildings layer.
-const buildingTileset = await createOsmBuildingsAsync();
-viewer.scene.primitives.add(buildingTileset);
-
-const gui = new GUI();
-const params = {
-  x: viewer.camera.position.x,
-  y: viewer.camera.position.y,
-  z: viewer.camera.position.z,
-  heading: viewer.camera.heading,
-  pitch: viewer.camera.pitch,
-  roll: viewer.camera.roll,
+// 初始化gui
+const gui = new GUI()
+// 控制器
+const controls = {
+  'zoomIn': () => { viewer.camera.zoomIn(viewer.camera.positionCartographic.height / 2) },
+  'zoomOut': () => { viewer.camera.zoomOut(viewer.camera.positionCartographic.height) },
+  'setView': () => { viewer.camera.setView({destination: defaultRectangle})},
+  'flyTo': () => { viewer.camera.flyTo({destination: defaultRectangle})},
+  'lookAt': () => { viewer.camera.lookAt(Cesium.Cartesian3.fromDegrees(115.25, 39.75), new Cesium.Cartesian3(0.0, -4790000.0, 3930000.0))},
+  'move': () => { viewer.camera.move(new Cesium.Cartesian3(1, 0, 0), 10000)},
 }
-gui.add(viewer.camera, "zoomIn").name("Zoom In");
-gui.add(viewer.camera, "zoomOut").name("Zoom Out");
-gui.add(viewer.camera, "flyHome").name("Fly Home");
-const cameraFolder = gui.addFolder("Camera_Position")
-cameraFolder.add(params, "x").name("X").onChange((value) => {
-  viewer.camera.position.x = value;
-});
-cameraFolder.add(params, "y").name("Y").onChange((value) => {
-  viewer.camera.position.y = value;
-});
-cameraFolder.add(params, "z").name("Z").onChange((value) => {
-  viewer.camera.position.z = value;
-});
-cameraFolder.open();
-const orientationFolder = gui.addFolder("Camera_Orientation")
-orientationFolder.add(params, "heading").name("Heading").onChange((value) => {
-  viewer.camera.heading = value;
-});
-orientationFolder.add(params, "pitch").name("Pitch").onChange((value) => {
-  viewer.camera.pitch = value;
-});
-orientationFolder.add(params, "roll").name("Roll").onChange((value) => {
-  viewer.camera.roll = value;
-});
-orientationFolder.open();
-const resetButton = {
-  reset: () => {
-    viewer.camera.setView({
-      destination: Cartesian3.fromDegrees(116.391, 39.907, 1000),
-      orientation: {
-        heading: CesiumMath.toRadians(0),
-        pitch: CesiumMath.toRadians(-90),
-        roll: CesiumMath.toRadians(0),
-      },
-    });
-  }
+
+for (const key in controls) {
+  if (!Object.hasOwn(controls, key)) continue;
+  // const element = controls[key];
+  gui.add(controls, key).name(`viewer.camera.${key}`);
 }
-gui.add(resetButton, "reset").name("Reset Camera");
-
-

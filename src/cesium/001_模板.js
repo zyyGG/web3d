@@ -1,18 +1,6 @@
 // CESIUM_BASE_URL 通过 vite.config.js 的 define 配置，在编译阶段替换
 // 静态资源目录 (Workers, ThirdParty, Assets, Widgets) 已复制到 public/Cesium/
 
-import {
-  Cartesian3,
-  createOsmBuildingsAsync,
-  Ion,
-  Math as CesiumMath,
-  Terrain,
-  Viewer,
-  Camera,
-  Rectangle,
-  Ellipsoid,
-  EllipsoidTerrainProvider,
-} from "cesium";
 import * as Cesium from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import GUI from "lil-gui";
@@ -20,21 +8,32 @@ import GUI from "lil-gui";
 // Your access token can be found at: https://ion.cesium.com/tokens.
 // This is the default access token from your ion account
 
-Ion.defaultAccessToken = import.meta.env.VITE_CESIUM_TOKEN;
+Cesium.Ion.defaultAccessToken = import.meta.env.VITE_CESIUM_TOKEN;
 
 // 必须在 new Viewer() 之前设置默认视图，否则不生效！
 // 定在中国北京
-Camera.DEFAULT_VIEW_RECTANGLE = Rectangle.fromDegrees(
-  115.25,
-  39.75,
-  116.25,
-  40.25,
+Cesium.Camera.DEFAULT_VIEW_RECTANGLE = Cesium.Rectangle.fromDegrees(
+  114.158754, 30.494312,
+  114.178754, 30.514312,
 );
 // 缩放级别，数值越小缩放越近（0 = 刚好贴合矩形，1 = 更远）
-Camera.DEFAULT_VIEW_FACTOR = 0.1;
+Cesium.Camera.DEFAULT_VIEW_FACTOR = 0;
+
+// 地形：ion 资产 1 = Cesium World Terrain；令牌无效/网络异常时回退到光滑椭球
+async function createTerrainProvider() {
+  try {
+    return await Cesium.createWorldTerrainAsync({
+      requestVertexNormals: true, // 需要 globe.enableLighting 才有光照效果
+      requestWaterMask: true, // 水面波纹/高光
+    });
+  } catch (error) {
+    console.warn("地形加载失败，回退到椭球体：", error);
+    return new Cesium.EllipsoidTerrainProvider();
+  }
+}
 
 // Initialize the Cesium Viewer in the HTML element with the `cesiumContainer` ID.
-const viewer = new Viewer("app", {
+const viewer = new Cesium.Viewer("app", {
   // 空间开关
   infoBox: false, // 信息框
   geocoder: false, // 右上角搜索框
@@ -49,7 +48,7 @@ const viewer = new Viewer("app", {
   navigationHelpButton: false, // 右上角帮助控件
   projectionPicker: false, // 右上角投影方式控件
   // 场景与地形
-  terrainProvider: new EllipsoidTerrainProvider(), // 不使用地形 — 平滑椭球体地球
+  terrainProvider: await createTerrainProvider(), // Cesium World Terrain（ion 资产 1），失败时回退到椭球体
   baseLayer: undefined, // false 不使用底图, undefined 使用默认底图, 其他值使用 Cesium.ImageryProvider 作为底图
   // skyBox: true, // 天空盒
   skyAtmosphere: false, // 大气层
@@ -75,7 +74,7 @@ const viewer = new Viewer("app", {
   automaticallyTrackDataSourceClocks: true, // 是否自动跟踪数据源时钟，设置为 false 后需要自己管理数据源时钟
   // dataSources: undefined, // 数据源集合，可以添加 CzmlDataSource、GeoJsonDataSource、KmlDataSource 等数据源
   // 其他
-  ellipsoid: Ellipsoid.default, // 地球椭球体，默认使用 WGS84
+  ellipsoid: Cesium.Ellipsoid.default, // 地球椭球体，默认使用 WGS84
   fullscreenElement: document.body, // 全屏模式下的元素，默认为 document.body
   creditContainer: undefined, // 版权信息容器，默认为 viewer.container
   creditViewport: undefined, // 版权信息视口，默认为 viewer.scene.canvas
@@ -85,6 +84,19 @@ const viewer = new Viewer("app", {
 
 viewer.cesiumWidget.creditContainer.style.display = "none";
 
+// Cesium 默认把地球渲染完后清空深度缓冲，导致地球背面的 3D Tiles 会穿透地球显示
+viewer.scene.globe.depthTestAgainstTerrain = true;
 
-const gui = new GUI();
-
+// 获取OSM街景模型
+const osmBuildingTileset = await Cesium.createOsmBuildingsAsync({
+  defaultColor: new Cesium.Color(1.0 ,1.0, 1.0, 1.0),
+  // 精度:
+  maximumScreenSpaceError: 8,
+  // 是否加载轮廓
+  enableShowOutline: true,
+  showOutline: true,
+  // 缓存 256MB, 一个城市差不多
+  cacheBytes: 256 * 1024 * 1024,
+  
+})
+viewer.scene.primitives.add(osmBuildingTileset)

@@ -19,6 +19,7 @@
     "@babylonjs/materials": "^8.7.0",
     "@dimforge/rapier3d-compat": "^0.17.0",
     "@tweenjs/tween.js": "^25.0.0",
+    "3d-tiles-renderer": "^0.5.3",
     "ammo.js": "^0.0.10",
     "animejs": "^4.0.2",
     "cesium": "^1.142.0",
